@@ -1,24 +1,27 @@
-//
-//  ContentView.swift
-//  Panoramic Storybook
-//
-//  Created by Jerry Turney on 4/27/25.
-//
-
 import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        PageCurlViewController()
+            .edgesIgnoringSafeArea(.all)
     }
 }
 
-#Preview {
-    ContentView()
+struct PageCurlViewController: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> StoryPageViewController {
+        return StoryPageViewController(
+            transitionStyle: .pageCurl,
+            navigationOrientation: .horizontal,
+            options: nil
+        )
+    }
+    func updateUIViewController(_ uiViewController: StoryPageViewController, context: Context) { }
 }
+
+#if DEBUG
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
+#endif
