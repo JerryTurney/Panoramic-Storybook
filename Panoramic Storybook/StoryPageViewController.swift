@@ -46,11 +46,10 @@ class PageContentViewController: UIViewController {
     private let minFOV: CGFloat = 30
     private let maxFOV: CGFloat = 100
 
-    private var streamingLabel: UILabel!
+    private var textView: UITextView!
     private var playButton: UIButton!
     private var audioPlayer: AVAudioPlayer?
     private var isPlaying = true
-    private var marqueeStarted = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -59,43 +58,36 @@ class PageContentViewController: UIViewController {
             setupCover()
         } else {
             setupPanorama()
-            setupAudioAndMarquee()
+            setupTextAndAudio()
         }
     }
 
     override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        guard sceneView != nil else { return }
+      super.viewDidLayoutSubviews()
+      guard sceneView != nil else { return }
 
-        // Fill entire view with panorama
-        sceneView.frame = view.bounds
+      // 1. Layout your image and text view exactly as before…
+      let fullHeight = view.bounds.height
+      let imageHeight = fullHeight * 0.75
+      sceneView.frame = CGRect(x: 0, y: 0,
+                               width: view.bounds.width,
+                               height: imageHeight)
+      textView.frame = CGRect(x: 0,
+                              y: imageHeight,
+                              width: view.bounds.width,
+                              height: fullHeight - imageHeight)
 
-        // Layout streaming label
-        let padding: CGFloat = 8
-        let textHeight: CGFloat = 30
-        streamingLabel.sizeToFit()
-        let labelWidth = streamingLabel.bounds.width
-        streamingLabel.frame = CGRect(
-            x: view.bounds.width,
-            y: view.bounds.height - textHeight - padding - playButton.bounds.height - padding,
-            width: labelWidth,
-            height: textHeight
-        )
-
-        // Layout play button below streaming text
-        let buttonSize = CGSize(width: 44, height: 44)
-        playButton.frame = CGRect(
-            x: (view.bounds.width - buttonSize.width) / 2,
-            y: view.bounds.height - buttonSize.height - padding,
-            width: buttonSize.width,
-            height: buttonSize.height
-        )
-
-        // Start marquee animation once
-        if !marqueeStarted {
-            marqueeStarted = true
-            startMarqueeAnimation()
-        }
+      // 2. Now position the playButton just above that text area:
+      let buttonSize = CGSize(width: 44, height: 44)
+      let padding: CGFloat = 8
+      // note: since playButton is in sceneView coords, sceneView.bounds.height == imageHeight
+      let yPos = sceneView.bounds.height - buttonSize.height - padding
+      playButton.frame = CGRect(
+        x: (sceneView.bounds.width - buttonSize.width) / 2,
+        y: yPos,
+        width: buttonSize.width,
+        height: buttonSize.height
+      )
     }
 
     private func setupCover() {
@@ -128,51 +120,42 @@ class PageContentViewController: UIViewController {
         cameraNode.camera?.fieldOfView = initialFOV
         scene.rootNode.addChildNode(cameraNode)
 
-        let panGR = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        sceneView.addGestureRecognizer(panGR)
-        let pinchGR = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        sceneView.addGestureRecognizer(pinchGR)
+        sceneView.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:))))
+        sceneView.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:))))
     }
 
-    private func setupAudioAndMarquee() {
-        // Streaming label
-        streamingLabel = UILabel()
-        streamingLabel.font = UIFont.systemFont(ofSize: 18)
-        streamingLabel.textColor = .white
-        streamingLabel.backgroundColor = .clear
-        streamingLabel.text = loadStoryText(page: pageIndex)
-        view.addSubview(streamingLabel)
+    private func setupTextAndAudio() {
+        // Text box at bottom
+        textView = UITextView()
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.backgroundColor = .black
+        textView.textColor = .white
+        textView.font = UIFont.preferredFont(forTextStyle: .title1)
+        textView.text = loadStoryText(page: pageIndex)
+        view.addSubview(textView)
 
-        // Play/pause button
+        // Speaker toggle button over image
         playButton = UIButton(type: .system)
         playButton.setTitle("🔊", for: .normal)
         playButton.titleLabel?.font = UIFont.systemFont(ofSize: 28)
         playButton.backgroundColor = UIColor(white: 0, alpha: 0.5)
         playButton.layer.cornerRadius = 22
         playButton.addTarget(self, action: #selector(toggleAudio), for: .touchUpInside)
-        view.addSubview(playButton)
+        sceneView.addSubview(playButton)
 
-        // Audio
         if let url = Bundle.main.url(forResource: "Story_\(pageIndex)", withExtension: "mp3") {
             audioPlayer = try? AVAudioPlayer(contentsOf: url)
             audioPlayer?.prepareToPlay()
-            audioPlayer?.play()
-            isPlaying = true
+            // start muted:
+            isPlaying = false
+            playButton.setTitle("🔇", for: .normal)
         }
     }
 
     private func loadStoryText(page: Int) -> String {
         guard let path = Bundle.main.path(forResource: "Story_\(page)", ofType: "txt") else { return "" }
         return (try? String(contentsOfFile: path)) ?? ""
-    }
-
-    private func startMarqueeAnimation() {
-        let totalDistance = streamingLabel.bounds.width + view.bounds.width
-        let speed: CGFloat = 30 // points per second
-        let duration = Double(totalDistance / speed)
-        UIView.animate(withDuration: duration, delay: 0, options: [.curveLinear, .repeat], animations: {
-            self.streamingLabel.frame.origin.x = -self.streamingLabel.bounds.width
-        }, completion: nil)
     }
 
     @objc private func toggleAudio() {
@@ -214,9 +197,7 @@ class PageContentViewController: UIViewController {
             initialFOV = cameraNode.camera?.fieldOfView ?? initialFOV
         case .changed:
             let newFOV = initialFOV / gr.scale
-            cameraNode.camera?.fieldOfView = CGFloat(
-                clamp(newFOV, min: minFOV, max: maxFOV)
-            )
+            cameraNode.camera?.fieldOfView = clamp(newFOV, min: minFOV, max: maxFOV)
         default:
             break
         }
@@ -230,8 +211,7 @@ class PageContentViewController: UIViewController {
 
     @objc private func handleDecelTick() {
         panVelocity *= 0.95
-        let yawDelta = Float(panVelocity * 0.00005)
-        cameraNode.eulerAngles.y -= yawDelta
+        cameraNode.eulerAngles.y -= Float(panVelocity * 0.00005)
         if abs(panVelocity) < 5 {
             decelLink?.invalidate()
             decelLink = nil
