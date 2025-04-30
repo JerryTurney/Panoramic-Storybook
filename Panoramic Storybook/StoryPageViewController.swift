@@ -4,13 +4,27 @@ import AVFoundation
 
 // MARK: Flip-book UIPageViewController subclass
 class StoryPageViewController: UIPageViewController, UIPageViewControllerDataSource {
-    let totalPages = 6
+    private var totalPages: Int = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
         dataSource = self
-        let coverVC = makeContentVC(for: 0)
-        setViewControllers([coverVC], direction: .forward, animated: false)
+
+        // Dynamically count Story_<n>.jpg files
+        totalPages = computePageCount()
+
+        // Start at first page
+        let firstVC = makeContentVC(for: 0)
+        setViewControllers([firstVC], direction: .forward, animated: false)
+    }
+
+    // Count sequentially named JPEGs: Story_0.jpg, Story_1.jpg, ...
+    private func computePageCount() -> Int {
+        var count = 0
+        while Bundle.main.path(forResource: "Story_\(count)", ofType: "jpg") != nil {
+            count += 1
+        }
+        return count
     }
 
     private func makeContentVC(for index: Int) -> PageContentViewController {
@@ -63,31 +77,33 @@ class PageContentViewController: UIViewController {
     }
 
     override func viewDidLayoutSubviews() {
-      super.viewDidLayoutSubviews()
-      guard sceneView != nil else { return }
+        super.viewDidLayoutSubviews()
+        guard sceneView != nil else { return }
 
-      // 1. Layout your image and text view exactly as before…
-      let fullHeight = view.bounds.height
-      let imageHeight = fullHeight * 0.75
-      sceneView.frame = CGRect(x: 0, y: 0,
-                               width: view.bounds.width,
-                               height: imageHeight)
-      textView.frame = CGRect(x: 0,
-                              y: imageHeight,
-                              width: view.bounds.width,
-                              height: fullHeight - imageHeight)
+        // Layout 360 image (top 3/4)
+        let fullHeight = view.bounds.height
+        let imageHeight = fullHeight * 0.75
+        sceneView.frame = CGRect(x: 0,
+                                 y: 0,
+                                 width: view.bounds.width,
+                                 height: imageHeight)
 
-      // 2. Now position the playButton just above that text area:
-      let buttonSize = CGSize(width: 44, height: 44)
-      let padding: CGFloat = 8
-      // note: since playButton is in sceneView coords, sceneView.bounds.height == imageHeight
-      let yPos = sceneView.bounds.height - buttonSize.height - padding
-      playButton.frame = CGRect(
-        x: (sceneView.bounds.width - buttonSize.width) / 2,
-        y: yPos,
-        width: buttonSize.width,
-        height: buttonSize.height
-      )
+        // Layout text box (bottom 1/4)
+        textView.frame = CGRect(x: 0,
+                                y: imageHeight,
+                                width: view.bounds.width,
+                                height: fullHeight - imageHeight)
+
+        // Position speaker button just above text area
+        let buttonSize = CGSize(width: 44, height: 44)
+        let padding: CGFloat = 8
+        let yPos = sceneView.bounds.height - buttonSize.height - padding
+        playButton.frame = CGRect(
+            x: (sceneView.bounds.width - buttonSize.width) / 2,
+            y: yPos,
+            width: buttonSize.width,
+            height: buttonSize.height
+        )
     }
 
     private func setupCover() {
@@ -111,13 +127,25 @@ class PageContentViewController: UIViewController {
         sphere.segmentCount = 96
         sphere.firstMaterial?.isDoubleSided = true
         sphere.firstMaterial?.cullMode = .front
-        sphere.firstMaterial?.diffuse.contents = UIImage(named: "Story_\(pageIndex).jpg")
+
+        // Load and flip image horizontally
+        let imageName = "Story_\(pageIndex).jpg"
+        if let img = UIImage(named: imageName) {
+            sphere.firstMaterial?.diffuse.contents = img
+            sphere.firstMaterial?.diffuse.wrapS = .repeat
+            sphere.firstMaterial?.diffuse.wrapT = .repeat
+            sphere.firstMaterial?.diffuse.contentsTransform = SCNMatrix4MakeScale(-1, 1, 1)
+        }
+
         let sphereNode = SCNNode(geometry: sphere)
         scene.rootNode.addChildNode(sphereNode)
 
+        // Set camera and center initial view on middle of panorama
         cameraNode = SCNNode()
         cameraNode.camera = SCNCamera()
         cameraNode.camera?.fieldOfView = initialFOV
+        // Rotate camera so it looks at the center of the image
+        cameraNode.eulerAngles.y = Float.pi  // adjust if offset needs fine-tuning
         scene.rootNode.addChildNode(cameraNode)
 
         sceneView.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:))))
@@ -144,18 +172,24 @@ class PageContentViewController: UIViewController {
         playButton.addTarget(self, action: #selector(toggleAudio), for: .touchUpInside)
         sceneView.addSubview(playButton)
 
+        // Prepare audio, start muted
         if let url = Bundle.main.url(forResource: "Story_\(pageIndex)", withExtension: "mp3") {
             audioPlayer = try? AVAudioPlayer(contentsOf: url)
             audioPlayer?.prepareToPlay()
-            // start muted:
             isPlaying = false
             playButton.setTitle("🔇", for: .normal)
         }
     }
 
     private func loadStoryText(page: Int) -> String {
-        guard let path = Bundle.main.path(forResource: "Story_\(page)", ofType: "txt") else { return "" }
-        return (try? String(contentsOfFile: path)) ?? ""
+        let base = "Story_\(page)"
+        for ext in ["txt", "TXT"] {
+            if let path = Bundle.main.path(forResource: base, ofType: ext),
+               let text = try? String(contentsOfFile: path) {
+                return text
+            }
+        }
+        return ""
     }
 
     @objc private func toggleAudio() {
